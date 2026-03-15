@@ -1,26 +1,26 @@
 /*
  * AFE4404 Basic Read library example.
  * https://github.com/rakshithbk/AFE4404-Library
- *
- * On ESP32 -  | AFE4404 | ESP32 Pin
- *             | I2C_Dat | 21 (SDA)
- *             | I2C_Clk | 22 (SCL)
- *             | ADC_RDY | 2
- *
- * Serial protocol (115200 baud, 8N1):
- *   0x88        — ping, echoes 0x88 back
- *   0x40        — start full setup: 41 registers x 3 bytes (LSB first)
- *   0x44        — partial update: 1 byte addr + 3 bytes data (LSB first)
- *   0x48        — software reset AFE4404
- *
- * Data output format: '$' [LED1 3B] [LED2 3B] [LED3 3B] [00 00 00] ';'
+ * 
+ * On Arduino Uno -  | AFE4404 | Uno Pin
+ *                   | I2C_Dat | A4
+ *                   | I2C_Clk | A5
+ * get_led_val() will return uint32_t values.
+ * 
+ * Advanced - you can modify the sample period and other
+ * parameters in the library files (refer AFE4404 datasheet)
  */
+
 
 #include <Wire.h>
 #include <AFE_connect.h>
 
-#define ADC_RDY_PIN      2
+#define ADC_RDY_PIN 2
 #define AFE4404_I2C_ADDR 0x58   // 7-bit default address
+
+volatile bool newDataAvailable = false;
+
+AFE A;
 
 // ── Register address table (matches STM32 ADDR_ar[42]) ───────────────────────
 const uint8_t ADDR_ar[42] = {
@@ -31,12 +31,6 @@ const uint8_t ADDR_ar[42] = {
 };
 volatile uint32_t Registers[42];
 
-// ── ADC_RDY interrupt flag ────────────────────────────────────────────────────
-// Wire нельзя вызывать из ISR на ESP32, поэтому ISR только выставляет флаг,
-// а чтение данных выполняется безопасно в основном цикле.
-volatile bool newDataAvailable = false;
-
-// ── UART RX state machine ─────────────────────────────────────────────────────
 volatile bool     setup_flag        = false;
 volatile bool     update_flag       = false;
 volatile bool     setup_data_ready  = false;
@@ -47,7 +41,25 @@ volatile uint32_t rx_raw            = 0;
 volatile uint8_t  UPDaddr           = 0;
 volatile uint32_t UPDdata           = 0;
 
-AFE A;
+void byteDivision(int x) {
+  if(newDataAvailable){
+    Serial.write(0);
+    Serial.write(0);
+    Serial.write(0);
+    return;
+  }
+  int a = x & 255;
+  int b = (x >> 8) & 255;
+  int c = (x >> 16) & 255;
+  Serial.write(c);
+  Serial.write(b);
+  Serial.write(a);
+}
+
+// Обработчик прерываний (должен быть максимально быстрым)
+void IRAM_ATTR dataReadyISR() {
+  newDataAvailable = true; // Просто устанавливаем флаг
+}
 
 // ── Direct I2C register write (bypasses library for arbitrary registers) ──────
 void AFE_WriteReg(uint8_t reg, uint32_t value) {
@@ -59,22 +71,7 @@ void AFE_WriteReg(uint8_t reg, uint32_t value) {
   Wire.endTransmission();
 }
 
-// ── Send one 24-bit value MSB first ──────────────────────────────────────────
-void byteDivision(int32_t x) {
-  Serial.write((uint8_t)((x >> 16) & 0xFF));
-  Serial.write((uint8_t)((x >>  8) & 0xFF));
-  Serial.write((uint8_t)( x        & 0xFF));
-}
 
-// ── ADC_RDY GPIO interrupt (FALLING edge) ────────────────────────────────────
-void IRAM_ATTR dataReadyISR() {
-  newDataAvailable = true;
-}
-
-// ── UART RX callback ──────────────────────────────────────────────────────────
-// Mirrors STM32 USART1_IRQHandler logic.
-// serialEvent() вызывается фреймворком Arduino автоматически после loop()
-// при наличии данных в буфере Serial (работает и с HWCDC, и с HardwareSerial).
 void serialEvent() {
   // Pause ADC_RDY interrupt while processing serial commands
   detachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN));
@@ -156,20 +153,42 @@ void serialEvent() {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-void setup() {
-  Serial.begin(115200);
-  Wire.begin();
-  A.init();
 
+void setup() {
+  Serial.begin(11520);
+  Serial.println("AFE4404 basic readings -\n");
+  A.init();
   pinMode(ADC_RDY_PIN, INPUT_PULLUP);
+    // 3. Настроить прерывание по спадающему фронту (LOW)
   attachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN), dataReadyISR, FALLING);
 }
 
 void loop() {
-  // ── Priority 1: write full register set received over serial ─────────────
-  serialEvent();
-  if (setup_data_ready) {
+  if (newDataAvailable) {
+    // Отключаем прерывания на время чтения данных
+    newDataAvailable = false;
+    detachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN));
+    
+    // Читаем данные из регистров AFE4404 (0x2Ah-0x2Fh)
+    //readAFE4404Registers();
+    
+    // Обрабатываем полученные данные
+    //processData();
+    /*Serial.write('$');
+    byteDivision(123);
+    byteDivision(345);
+    byteDivision(678);
+    byteDivision(0);
+    Serial.write(';');
+    delay(100);*/
+
+    serialEvent();
+    
+    // Снова включаем прерывания
+    attachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN), dataReadyISR, FALLING);
+    
+    
+  } else if (setup_data_ready) {
     Serial.write("setup\n");
     detachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN));
     for (int i = 0; i < 41; i++) {
@@ -177,28 +196,18 @@ void loop() {
     }
     setup_data_ready = false;
     attachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN), dataReadyISR, FALLING);
-    return;
-  }
-
-  // ── Priority 2: write single register update received over serial ─────────
-  if (update_data_ready) {
+  } else if (update_data_ready) {
     Serial.write("update\n");
     detachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN));
     AFE_WriteReg(UPDaddr, UPDdata);
     update_data_ready = false;
-    attachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN), dataReadyISR, FALLING);
-    return;
-  }
-
-  // ── Priority 3: send LED values when ADC_RDY fired ───────────────────────
-  if (newDataAvailable) {
-    newDataAvailable = false;
-    /*Serial.write('$');
+  } else {
+    Serial.write('$');
     byteDivision(A.get_led1_val());
     byteDivision(A.get_led2_val());
     byteDivision(A.get_led3_val());
-    byteDivision(0);          // ALED1 placeholder
-    Serial.write(';');*/
-    //Serial.write('a');
+    byteDivision(0);
+    Serial.write(';');
+    delay(100);
   }
 }
