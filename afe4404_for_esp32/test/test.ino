@@ -1,3 +1,5 @@
+
+
 /*
  * AFE4404 Basic Read library example.
  * https://github.com/rakshithbk/AFE4404-Library
@@ -22,6 +24,49 @@ volatile bool newDataAvailable = false;
 
 AFE A;
 
+void AFE_init() {
+  AFE_Reg_Write(0x00, 0x000008ul);
+  AFE_Reg_Write(0x23, 0x009200ul);
+  AFE_Reg_Write(0x1E, (0x000100ul | 0x000003ul));
+  AFE_Reg_Write(0x39, 0x000006ul);
+  AFE_Reg_Write(0x1D, 19999);
+  AFE_Reg_Write(0x09, 0);
+  AFE_Reg_Write(0x0A, 1224);
+  AFE_Reg_Write(0x01, 12);
+  AFE_Reg_Write(0x02, 24);
+  AFE_Reg_Write(0x15, 26);
+  AFE_Reg_Write(0x16, 32);
+  AFE_Reg_Write(0x0D, 34);
+  AFE_Reg_Write(0x0E, 166);
+  AFE_Reg_Write(0x36, 26);
+  AFE_Reg_Write(0x37, 75);
+  AFE_Reg_Write(0x05, 38);
+  AFE_Reg_Write(0x06, 75);
+  AFE_Reg_Write(0x17, 168);
+  AFE_Reg_Write(0x18, 174);
+  AFE_Reg_Write(0x0F, 176);
+  AFE_Reg_Write(0x10, 308);
+  AFE_Reg_Write(0x03, 77);
+  AFE_Reg_Write(0x04, 176);
+  AFE_Reg_Write(0x07, 97);
+  AFE_Reg_Write(0x08, 176);
+  AFE_Reg_Write(0x19, 310);
+  AFE_Reg_Write(0x1A, 316);
+  AFE_Reg_Write(0x11, 318);
+  AFE_Reg_Write(0x12, 450);
+  AFE_Reg_Write(0x0B, 198);
+  AFE_Reg_Write(0x0C, 297);
+  AFE_Reg_Write(0x1B, 452);
+  AFE_Reg_Write(0x1C, 458);
+  AFE_Reg_Write(0x13, 460);
+  AFE_Reg_Write(0x14, 592);
+  AFE_Reg_Write(0x32, 692);
+  AFE_Reg_Write(0x33, 1899);
+  AFE_Reg_Write(0x22, (7<<12 | 10<<6 | 13));
+  AFE_Reg_Write(0x21, (0x000002ul | 0x000020ul));
+  AFE_Reg_Write(0x20, (0x008000ul | 0x000004ul | 0x000018ul));
+}
+
 // ── Register address table (matches STM32 ADDR_ar[42]) ───────────────────────
 const uint8_t ADDR_ar[42] = {
   0x00, 0x23, 0x1E, 0x39, 0x1D, 0x09, 0x0A, 0x01, 0x02, 0x15, 0x16,
@@ -41,13 +86,20 @@ volatile uint32_t rx_raw            = 0;
 volatile uint8_t  UPDaddr           = 0;
 volatile uint32_t UPDdata           = 0;
 
+
+
+
+
+
 void byteDivision(int x) {
-  if(newDataAvailable){
+  /*if(newDataAvailable){
     Serial.write(0);
     Serial.write(0);
     Serial.write(0);
     return;
-  }
+  }*/
+
+
   int a = x & 255;
   int b = (x >> 8) & 255;
   int c = (x >> 16) & 255;
@@ -74,13 +126,11 @@ void AFE_WriteReg(uint8_t reg, uint32_t value) {
 
 void serialEvent() {
   // Pause ADC_RDY interrupt while processing serial commands
-  detachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN));
+  //detachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN));
   Serial.write("serealEvent\n");
   while (Serial.available()) {
     Serial.write("sereal avalable\n");
     uint8_t b = (uint8_t)Serial.read();
-
-    Serial.write(b);
 
     // ── Ping: echo back 0x88 (independent of state machine) ──────────────
     if (b == 0x88) {
@@ -149,7 +199,7 @@ void serialEvent() {
 
   // Re-enable ADC_RDY only when no pending register writes remain
   if (!setup_data_ready && !update_data_ready) {
-    attachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN), dataReadyISR, FALLING);
+    //attachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN), dataReadyISR, FALLING);
   }
 }
 
@@ -158,6 +208,7 @@ void setup() {
   Serial.begin(11520);
   Serial.println("AFE4404 basic readings -\n");
   A.init();
+  //AFE_init();
   pinMode(ADC_RDY_PIN, INPUT_PULLUP);
     // 3. Настроить прерывание по спадающему фронту (LOW)
   attachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN), dataReadyISR, FALLING);
@@ -194,11 +245,10 @@ void loop() {
     for (int i = 0; i < 41; i++) {
       AFE_WriteReg(ADDR_ar[i], Registers[i]);
     }
-    setup_data_ready = false;
     attachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN), dataReadyISR, FALLING);
   } else if (update_data_ready) {
     Serial.write("update\n");
-    detachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN));
+    //detachInterrupt(digitalPinToInterrupt(ADC_RDY_PIN));
     AFE_WriteReg(UPDaddr, UPDdata);
     update_data_ready = false;
   } else {
