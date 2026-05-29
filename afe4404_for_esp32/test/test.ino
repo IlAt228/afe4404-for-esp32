@@ -63,6 +63,27 @@ void byteDivision(int x)
   blePush(x & 0xFF);
 }
 
+// ── AFE4404 direct register read ──────────────────────────────────────────────
+int32_t AFE_ReadReg(uint8_t reg)
+{
+  Wire.beginTransmission(AFE4404_I2C_ADDR);
+  Wire.write(reg);
+  Wire.endTransmission();
+  Wire.requestFrom((int)AFE4404_I2C_ADDR, 3);
+  int32_t val = 0;
+  if (Wire.available() >= 3) {
+    val = (int32_t)Wire.read() << 16;
+    val |= (int32_t)Wire.read() << 8;
+    val |= Wire.read();
+    // sign extension for 22-bit signed (ADC result registers 0x2A-0x2F)
+    if (val & 0x00200000) {
+      val &= 0x003FFFFF;
+      val ^= (int32_t)0xFFC00000;
+    }
+  }
+  return val;
+}
+
 // ── AFE4404 direct register write ─────────────────────────────────────────────
 void AFE_WriteReg(uint8_t reg, uint32_t value)
 {
@@ -261,10 +282,10 @@ void loop()
     byteDivision(A.get_led1_val());
     byteDivision(A.get_led2_val());
     byteDivision(A.get_led3_val());
-    byteDivision(0);
+    byteDivision(AFE_ReadReg(0x2D));
     blePush(';');
     bleFlush();
-    delay(100);
+    delay(25);
   }
   else
   {
