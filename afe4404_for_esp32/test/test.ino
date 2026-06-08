@@ -285,7 +285,7 @@ void loop()
     byteDivision(AFE_ReadReg(0x2D));
     blePush(';');
     bleFlush();
-    delay(25);
+    delay(7);
   }
   else
   {
